@@ -915,7 +915,9 @@ ItemGrid.prototype.repaintTile=function(i){
 
 	var item=this.itemList.items[i];
 	if(item.id!=0x7ffe && item.id!=0x7ffc){
-		if(item.id==0x009d)
+		if(item.hasSnowperson || isSnowpersonMapItemId(item.id))
+			this._ctx.fillStyle='#fff';
+		else if(item.id==0x009d)
 			this._ctx.fillStyle='#877861';
 		else if(item.id>=0x9f && item.id<=0xca)
 			this._ctx.fillStyle='#ec67b8';
@@ -963,7 +965,9 @@ ItemGrid.prototype.repaintTile=function(i){
 		}
 
 		var icon=0;
-		if(!el('item_'+item.id)){
+		if(item.hasSnowperson || isSnowpersonMapItemId(item.id)){
+			icon=0;
+		}else if(!el('item_'+item.id)){
 			icon=1;
 		}else if(this.inside){
 			var rotation=item.flag2>>4;
@@ -984,9 +988,9 @@ ItemGrid.prototype.repaintTile=function(i){
 		this._ctx.fillRect(x, y, this.tileSize, this.tileSize);
 	}
 
-	if(item.hasBuildingMask)
+	if(!(item.hasSnowperson || isSnowpersonMapItemId(item.id)) && item.hasBuildingMask)
 		this._ctx.drawImage(acresImage, 140, 704, 16, 16, x, y, 16, 16);
-	if(item.hasBuilding)
+	if(!(item.hasSnowperson || isSnowpersonMapItemId(item.id)) && item.hasBuilding)
 		this._ctx.drawImage(acresImage, 60, 704, 16, 16, x, y, 16, 16);
 
 	this._ctx.fillStyle='rgba(0,0,0,.15)';
@@ -1063,16 +1067,16 @@ function click(evt,itemGridObj,firstClick){
 	}else if(mouseHeld===1){
 		var selectedItemValue=el('items').value;
 		var handledSpecialItem=false;
-		if(firstClick && itemSlot.hasBuilding){
-			itemGridObj.canvas.parentElement.style.cursor='grabbing';
-			itemGridObj.belongsToMap.currentMovingBuilding=itemSlot.hasBuilding;
-		}else if(isSnowpersonItemValue(selectedItemValue)){
+		if(isSnowpersonItemValue(selectedItemValue)){
 			handledSpecialItem=true;
 			if(itemGridObj.belongsToMap===map && town.snowpeople){
 				town.snowpeople.place(getSnowpersonItemType(selectedItemValue), itemGridObj.startX+x, itemGridObj.startY+y);
 			}else{
 				UI.Snackbars.show('Snowpeople can only be placed on the town map.', 'danger');
 			}
+		}else if(firstClick && itemSlot.hasBuilding){
+			itemGridObj.canvas.parentElement.style.cursor='grabbing';
+			itemGridObj.belongsToMap.currentMovingBuilding=itemSlot.hasBuilding;
 		}else if(
 			(el('items').value>=itemGridObj.minItem && el('items').value<=itemGridObj.maxItem)
 			||
@@ -2273,11 +2277,6 @@ Snowpeople.prototype.place=function(typeId, x, y){
 		UI.Snackbars.show('Snowpeople need valid town-map coordinates.', 'danger');
 		return false;
 	}
-	var isBuildingTile=(item.hasBuilding || item.hasBuildingMask) && !item.hasSnowperson;
-	if(!isBuildingTile && item.id!==SnowpeopleConstants.EMPTY_ITEM_ID && !isSnowpersonMapItemId(item.id)){
-		UI.Snackbars.show('Snowpeople must be placed on an empty tile.', 'danger');
-		return false;
-	}
 
 	var slot=item.hasSnowperson || this.getSlotAt(x, y) || this.getAvailableSlot();
 	if(!slot){
@@ -2313,31 +2312,10 @@ Snowpeople.prototype.clearItem=function(item){
 		return this.clearSlot(item.hasSnowperson);
 	return false;
 }
-Snowpeople.prototype.validatePlacement=function(slot, label, x, y, usedCoordinates){
-	var key=x+'x'+y;
-	if(usedCoordinates[key]){
-		UI.Snackbars.show('Snowpeople cannot share the same tile.', 'danger');
-		return false;
-	}
-	usedCoordinates[key]=true;
-
-	var item=this.getItemAt(x, y);
-	if(!item){
-		UI.Snackbars.show(label+' has invalid coordinates.', 'danger');
-		return false;
-	}
-	var isBuildingTile=item.hasBuilding || item.hasBuildingMask;
-	if(!isBuildingTile && item.id!==SnowpeopleConstants.EMPTY_ITEM_ID && !isSnowpersonMapItemId(item.id)){
-		UI.Snackbars.show(label+' must be placed on an empty tile.', 'danger');
-		return false;
-	}
-	return true;
-}
 Snowpeople.prototype.validate=function(){
 	if(!this.changed)
 		return true;
 
-	var usedCoordinates={};
 	var activeCount=0;
 
 	for(var i=0; i<this.slots.length; i++){
@@ -2346,9 +2324,6 @@ Snowpeople.prototype.validate=function(){
 			continue;
 
 		activeCount++;
-
-		if(!this.validatePlacement(slot, slot.getName(), slot.x, slot.y, usedCoordinates))
-			return false;
 	}
 
 	if(activeCount>SnowpeopleConstants.SLOT_COUNT){
@@ -4720,82 +4695,34 @@ function selectPlayer(p){
 
 
 
-function canUseLocalSaveHelper(){
-	return location.protocol==='file:' || location.hostname==='localhost' || location.hostname==='127.0.0.1';
-}
-async function saveWithLocalSaveHelper(){
-	if(!canUseLocalSaveHelper() || !window.fetch || !savegame.getBlob)
-		return false;
-
-	var controller=window.AbortController? new AbortController() : false;
-	var timeout=controller? setTimeout(function(){controller.abort()}, 700) : false;
-	try{
-		var response=await fetch('http://127.0.0.1:38765/save', {
-			method:'POST',
-			headers:{
-				'Content-Type':'application/octet-stream',
-				'X-ACNL-Filename':savegame.fileName
-			},
-			body:savegame.getBlob(),
-			signal:controller? controller.signal : undefined
-		});
-		if(timeout)
-			clearTimeout(timeout);
-		if(!response.ok)
-			return false;
-
-		UI.Snackbars.show('Saved changes directly to the Citra save folder.');
-		return true;
-	}catch(e){
-		if(timeout)
-			clearTimeout(timeout);
-		return false;
-	}
-}
-async function saveSavegameFile(){
-	if(await saveWithLocalSaveHelper())
-		return true;
-
-	savegame.save();
-	return true;
-}
-async function saveChanges(){
+function saveChanges(){
 	if(town.snowpeople && !town.snowpeople.validate())
 		return false;
 
-	var saveButton=el('save-button');
-	saveButton.disabled=true;
-	try{
-		for(var i=0; i<4; i++)
-			players[i].save();
+	for(var i=0; i<4; i++)
+		players[i].save();
 
-		for(var i=0; i<buildings.length; i++)
-			buildings[i].save();
+	for(var i=0; i<buildings.length; i++)
+		buildings[i].save();
 
-		for(var i=0; i<villagers.length; i++)
-			villagers[i].save();
+	for(var i=0; i<villagers.length; i++)
+		villagers[i].save();
 
-		if(town.snowpeople)
-			town.snowpeople.save();
+	if(town.snowpeople)
+		town.snowpeople.save();
 
-		map.save();
-		island.save();
-		grassMap.save();
-		//grassMapToday.save();
+	map.save();
+	island.save();
+	grassMap.save();
+	//grassMapToday.save();
 
-		town.save();
+	town.save();
 
 
-		/* recalculate checksums */
-		updateChecksums(savegame);
+	/* recalculate checksums */
+	updateChecksums(savegame);
 
-		await saveSavegameFile();
+	savegame.save();
 
-		WarnOnLeave.set(false);
-	}catch(e){
-		UI.Snackbars.show('Could not save changes.', 'danger');
-		throw e;
-	}finally{
-		saveButton.disabled=false;
-	}
+	WarnOnLeave.set(false);
 }

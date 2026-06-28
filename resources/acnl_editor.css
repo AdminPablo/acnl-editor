@@ -721,6 +721,8 @@ span.sprite{display:inline-block;vertical-align:middle}
 .building-list li.building-row input[type="text"]{font-family:var(--font-monospace); width:32px}
 .temporary-event-note,
 .temporary-event-option.temporary-event-maxed{color:#888}
+#popover-toggler-item.temporary-event-selected{color:white;background:#4d8859}
+#popover-toggler-item.temporary-event-selected:hover{color:white;background:#4d8859}
 .temporary-event-selected.temporary-event-maxed{color:#777}
 .temporary-event-help{color:#777;display:block;margin-bottom:4px}
 
