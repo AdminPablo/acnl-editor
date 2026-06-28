@@ -213,6 +213,8 @@ const OffsetsPlus={
 	MUSEUM_DONATION_DATES:	0x06aeb8,
 	MUSEUM_DONATION_DONORS:	0x06b300,
 	MUSEUM_ROOMS:			0x06b478,
+	SNOWPEOPLE:				0x06fe78,
+	SNOWPEOPLE_SUPPORT:		0x06fea8,
 
 	MAP_GRASS_TODAY:		0x0584d8,
 	MAP_GRASS:				0x059900,
@@ -325,6 +327,21 @@ const OffsetsPlus={
 	MIN_SONG:		0x212b,	MAX_SONG:		0x2185,
 	MIN_SHIRT:		0x2495,	MAX_SHIRT:		0x2680,
 	MIN_UMBRELLA:	0x27e6,	MAX_UMBRELLA:	0x280a
+};
+
+const SnowpeopleConstants={
+	ITEM_OPTION_PREFIX:'snowperson:',
+	ITEM_ID:0x7ff8,
+	EMPTY_ITEM_ID:0x7ffe,
+	SLOT_SIZE:12,
+	SLOT_COUNT:4,
+	EMPTY_RECORD:[0xff,0xff,0xff,0xff,0xff,0xff,0xff,0x7f,0x00,0x00,0x00,0x00],
+	TYPES:[
+		{id:'snowtyke', name:'Snowtyke', record:[0x40,0x7d,0xbf,0x9a,0x92,0xc6,0x23,0x0d,0x40,0x53,0x09,0x00], legacyRecords:[[0x00,0x03,0x61,0x34,0x5c,0xc6,0x23,0x0d,0x51,0x5b,0x09,0x00], [0xc0,0xee,0x1e,0xcc,0x0c,0xc6,0x23,0x0d,0x56,0x59,0x09,0x00]]},
+		{id:'snowboy', name:'Snowboy', record:[0xc0,0x82,0x3f,0xf0,0x42,0xc6,0x23,0x0d,0x6e,0xab,0x0b,0x00], legacyRecords:[[0x40,0x24,0xb2,0x22,0x66,0xc6,0x23,0x0d,0x9b,0xd2,0x0b,0x00]]},
+		{id:'papa', name:'Snowman', record:[0x40,0xeb,0x1c,0xf0,0x70,0xc6,0x23,0x0d,0xe4,0xff,0x01,0x00], legacyRecords:[[0xc0,0x71,0x18,0xe6,0x6e,0xc6,0x23,0x0d,0xe3,0xff,0x09,0x0c], [0x40,0xc8,0x96,0x6b,0x8a,0xc6,0x23,0x0d,0xcb,0xff,0x0d,0x13]]},
+		{id:'mama', name:'Snowmam', record:[0xc0,0x9b,0x51,0x57,0x2a,0xc6,0x23,0x0d,0x5b,0x82,0x09,0x00], legacyRecords:[[0x00,0x47,0x47,0x62,0x5e,0xc6,0x23,0x0d,0x56,0x88,0x09,0x00], [0xc0,0x52,0x3c,0x2e,0x21,0xc6,0x23,0x0d,0x6b,0x90,0x09,0x00]]}
+	]
 };
 
 const Constants={
@@ -994,13 +1011,23 @@ acresImage.src='./resources/acres.png';
 
 
 
+function isAllowedLockedItem(itemId){
+	return plusMode && itemId==0x341a; // bingo card
+}
 function isLockedItem(itemId){
+	itemId=parseInt(itemId);
+	if(isAllowedLockedItem(itemId))
+		return false;
 	return (!plusMode && ((itemId>=0x30f9 && itemId<=0x30fc) || (itemId>=0x30a2 && itemId<=0x30a9))) ||
-		(plusMode && ((itemId>=0x341a && itemId<=0x341d) || (itemId>=0x33bc && itemId<=0x33c3)))	
+		(plusMode && ((itemId>=0x341a && itemId<=0x341d) || (itemId>=0x33bc && itemId<=0x33c3)))
 }
 
 function refreshCurrentItemText(){
-	el('popover-toggler-item').innerHTML=el('items').options[el('items').selectedIndex].text;
+	var selectedOption=el('items').options[el('items').selectedIndex];
+	var maxed=isSnowpersonItemValue(selectedOption.value) && town && town.snowpeople && town.snowpeople.isFull();
+	el('popover-toggler-item').innerHTML=selectedOption.text;
+	el('popover-toggler-item').classList.toggle('temporary-event-selected', isSnowpersonItemValue(selectedOption.value));
+	el('popover-toggler-item').classList.toggle('temporary-event-maxed', maxed);
 }
 function click(evt,itemGridObj,firstClick){
 	var rect=itemGridObj.canvas.getBoundingClientRect();
@@ -1034,9 +1061,18 @@ function click(evt,itemGridObj,firstClick){
 			itemGridObj.canvas.parentElement.style.cursor='grab';
 		}
 	}else if(mouseHeld===1){
+		var selectedItemValue=el('items').value;
+		var handledSpecialItem=false;
 		if(firstClick && itemSlot.hasBuilding){
 			itemGridObj.canvas.parentElement.style.cursor='grabbing';
 			itemGridObj.belongsToMap.currentMovingBuilding=itemSlot.hasBuilding;
+		}else if(isSnowpersonItemValue(selectedItemValue)){
+			handledSpecialItem=true;
+			if(itemGridObj.belongsToMap===map && town.snowpeople){
+				town.snowpeople.place(getSnowpersonItemType(selectedItemValue), itemGridObj.startX+x, itemGridObj.startY+y);
+			}else{
+				UI.Snackbars.show('Snowpeople can only be placed on the town map.', 'danger');
+			}
 		}else if(
 			(el('items').value>=itemGridObj.minItem && el('items').value<=itemGridObj.maxItem)
 			||
@@ -1057,26 +1093,36 @@ function click(evt,itemGridObj,firstClick){
 
 				setFlagBits(2, newFlag2);
 			}
+			if(itemGridObj.belongsToMap===map && town.snowpeople && itemSlot.hasSnowperson)
+				town.snowpeople.clearItem(itemSlot);
 			if(!isLockedItem(el('items').value) && !isLockedItem(itemSlot.id))
 				itemSlot.set(getFlagByte(2),getFlagByte(1),el('items').value);
 
 			itemGridObj.repaintTile((parseInt(y*itemGridObj.width)+x));
 		}
-		if(EditorSettings.autoIncrement)
+		if(EditorSettings.autoIncrement && !handledSpecialItem)
 			el('items').selectedIndex=el('items').selectedIndex+1;
-		itemGridObj.itemList.edited=true;
+		if(!handledSpecialItem)
+			itemGridObj.itemList.edited=true;
 	}else if(mouseHeld===2){
-		if(!el('item_'+itemSlot.id)){
+		if(itemGridObj.belongsToMap===map && itemSlot.hasSnowperson){
+			el('items').value=getSnowpersonItemValue(itemSlot.hasSnowperson.type);
+		}else if(!el('item_'+itemSlot.id)){
 			const option=document.createElement('option');
 			option.id='item_'+itemSlot.id;
 			option.value=itemSlot.id;
 			option.innerHTML='unknown item: 0x'+intToHex(itemSlot.id, 1);
 			document.getElementById('items').insertBefore(option, document.getElementById('item_32766'));
+			el('items').value=itemSlot.id;
+		}else{
+			el('items').value=itemSlot.id;
 		}
-		el('items').value=itemSlot.id;
 		refreshCurrentItemText();
 
-		buildFlagEditor(itemSlot.flag1, itemSlot.flag2);
+		if(itemGridObj.belongsToMap===map && itemSlot.hasSnowperson)
+			buildFlagEditor(0, 0);
+		else
+			buildFlagEditor(itemSlot.flag1, itemSlot.flag2);
 	}
 
 
@@ -1962,6 +2008,499 @@ function getBuildingMask(buildingId){
 }
 
 
+function snowpersonRecordEquals(recordA, recordB){
+	for(var i=0; i<SnowpeopleConstants.SLOT_SIZE; i++)
+		if(recordA[i]!==recordB[i])
+			return false;
+	return true;
+}
+function snowpersonRecordMatchesType(record, template){
+	for(var i=0; i<SnowpeopleConstants.SLOT_SIZE; i++){
+		if((i>=5 && i<=7) || i>=10)
+			continue;
+		if(record[i]!==template[i])
+			return false;
+	}
+	return true;
+}
+function getSnowpersonType(typeId){
+	for(var i=0; i<SnowpeopleConstants.TYPES.length; i++)
+		if(SnowpeopleConstants.TYPES[i].id===typeId)
+			return SnowpeopleConstants.TYPES[i];
+	return false;
+}
+function getSnowpersonMapItemId(slotIndex){
+	slotIndex=parseInt(slotIndex || 0);
+	return SnowpeopleConstants.ITEM_ID+slotIndex;
+}
+function getSnowpersonMapSlotIndex(itemId){
+	itemId=parseInt(itemId);
+	if(itemId>=SnowpeopleConstants.ITEM_ID && itemId<SnowpeopleConstants.ITEM_ID+SnowpeopleConstants.SLOT_COUNT)
+		return itemId-SnowpeopleConstants.ITEM_ID;
+	return false;
+}
+function isSnowpersonMapItemId(itemId){
+	return getSnowpersonMapSlotIndex(itemId)!==false;
+}
+function getSnowpersonItemValue(typeId){
+	return SnowpeopleConstants.ITEM_OPTION_PREFIX+typeId;
+}
+function isSnowpersonItemValue(value){
+	return typeof value==='string' && value.indexOf(SnowpeopleConstants.ITEM_OPTION_PREFIX)===0;
+}
+function getSnowpersonItemType(value){
+	return isSnowpersonItemValue(value)? value.substr(SnowpeopleConstants.ITEM_OPTION_PREFIX.length) : false;
+}
+function addTemporaryEventItemOptions(){
+	if(!plusMode)
+		return;
+
+	var optGroup=document.createElement('optgroup');
+	optGroup.label='Temporary / event objects';
+	optGroup.flags=[];
+
+	var note=createOption('', 'Snowpeople: winter only, max 4');
+	note.disabled=true;
+	note.className='temporary-event-note';
+	optGroup.appendChild(note);
+
+	for(var i=0; i<SnowpeopleConstants.TYPES.length; i++){
+		var snowpersonType=SnowpeopleConstants.TYPES[i];
+		var value=getSnowpersonItemValue(snowpersonType.id);
+		var option=createOption(value, snowpersonType.name+' (snowperson)');
+		option.id='item_'+value;
+		option.className='temporary-event-option';
+		option.title='Winter saves only. Max 4 snowpeople.';
+		option.cleanName=(snowpersonType.name+' snowperson temporary event winter max 4').clean();
+		optGroup.appendChild(option);
+	}
+
+	el('items').appendChild(optGroup);
+	refreshTemporaryEventItemOptions();
+}
+function refreshTemporaryEventItemOptions(){
+	if(!plusMode || !el('items'))
+		return;
+
+	var maxed=town && town.snowpeople && town.snowpeople.isFull();
+	var title=maxed? 'Max 4 snowpeople are already active. Replace or clear one to add another.' : 'Winter saves only. Max 4 snowpeople.';
+	var selects=[el('items'), el('items-search')];
+	for(var i=0; i<selects.length; i++){
+		if(!selects[i])
+			continue;
+		for(var j=0; j<selects[i].options.length; j++){
+			var option=selects[i].options[j];
+			if(isSnowpersonItemValue(option.value)){
+				option.classList.toggle('temporary-event-maxed', maxed);
+				option.title=title;
+			}
+		}
+	}
+
+	if(isSnowpersonItemValue(el('items').value))
+		refreshCurrentItemText();
+}
+function getSnowpersonRecordHex(record){
+	var hex=[];
+	for(var i=0; i<record.length; i++)
+		hex.push(intToHex(record[i], 1));
+	return hex.join(' ');
+}
+function Snowpeople(){
+	this.slots=[];
+	this.mapItems=this.findMapItems();
+	this.changed=false;
+
+	var mapItemsBySlot=[];
+	var usedMapItems=[];
+	var useSlotMapItems=false;
+	for(var i=0; i<this.mapItems.length; i++){
+		var slotIndex=getSnowpersonMapSlotIndex(this.mapItems[i].id);
+		if(slotIndex!==false){
+			if(!mapItemsBySlot[slotIndex])
+				mapItemsBySlot[slotIndex]=this.mapItems[i];
+			if(slotIndex>0)
+				useSlotMapItems=true;
+		}
+	}
+
+	var mapItemIndex=0;
+	for(var i=0; i<SnowpeopleConstants.SLOT_COUNT; i++){
+		var record=this.readRecord(i);
+		var mapItem=false;
+		if(this.identifyRecord(record, i)!=='none'){
+			if(useSlotMapItems){
+				mapItem=mapItemsBySlot[i] || false;
+				if(mapItem)
+					usedMapItems.push(mapItem);
+				else{
+					while(mapItemIndex<this.mapItems.length && usedMapItems.indexOf(this.mapItems[mapItemIndex])!==-1)
+						mapItemIndex++;
+					mapItem=this.mapItems[mapItemIndex++] || false;
+					if(mapItem)
+						usedMapItems.push(mapItem);
+				}
+			}else{
+				mapItem=this.mapItems[mapItemIndex++];
+			}
+		}
+		this.slots[i]=new SnowpersonSlot(this, i, mapItem);
+	}
+	refreshTemporaryEventItemOptions();
+}
+Snowpeople.prototype.findMapItems=function(){
+	var mapItems=[];
+	for(var i=0; i<map.items.length; i++)
+		if(isSnowpersonMapItemId(map.items[i].id))
+			mapItems.push(map.items[i]);
+	return mapItems;
+}
+Snowpeople.prototype.readRecord=function(n){
+	var record=[];
+	var offset=Offsets.SNOWPEOPLE+n*SnowpeopleConstants.SLOT_SIZE;
+	for(var i=0; i<SnowpeopleConstants.SLOT_SIZE; i++)
+		record.push(savegame.readU8(offset+i));
+	return record;
+}
+Snowpeople.prototype.writeRecord=function(n, record){
+	var offset=Offsets.SNOWPEOPLE+n*SnowpeopleConstants.SLOT_SIZE;
+	for(var i=0; i<SnowpeopleConstants.SLOT_SIZE; i++)
+		savegame.writeU8(offset+i, record[i]);
+}
+Snowpeople.prototype.readSupportRecord=function(){
+	var record=[];
+	for(var i=0; i<SnowpeopleConstants.SLOT_SIZE; i++)
+		record.push(savegame.readU8(Offsets.SNOWPEOPLE_SUPPORT+i));
+	return record;
+}
+Snowpeople.prototype.createRecord=function(typeId, n){
+	var snowpersonType=getSnowpersonType(typeId);
+	if(!snowpersonType)
+		return false;
+
+	var record=snowpersonType.record.slice();
+	var support=this.readSupportRecord();
+	var uniqueValue=support[5] | (support[6]<<8) | (support[7]<<16);
+	uniqueValue+=parseInt(n || 0)+1;
+	record[5]=uniqueValue & 0xff;
+	record[6]=(uniqueValue>>8) & 0xff;
+	record[7]=(uniqueValue>>16) & 0xff;
+	return record;
+}
+Snowpeople.prototype.identifyRecord=function(record, n){
+	if(snowpersonRecordEquals(record, SnowpeopleConstants.EMPTY_RECORD))
+		return 'none';
+
+	for(var i=0; i<SnowpeopleConstants.TYPES.length; i++){
+		var snowpersonType=SnowpeopleConstants.TYPES[i];
+		if(snowpersonRecordMatchesType(record, this.createRecord(snowpersonType.id, n)))
+			return SnowpeopleConstants.TYPES[i].id;
+		for(var j=0; snowpersonType.legacyRecords && j<snowpersonType.legacyRecords.length; j++)
+			if(snowpersonRecordMatchesType(record, snowpersonType.legacyRecords[j]))
+				return snowpersonType.id;
+	}
+
+	return 'custom';
+}
+Snowpeople.prototype.getItemCoordinates=function(item){
+	return {
+		x:item.acre.startX+(item.acreTile%16),
+		y:item.acre.startY+parseInt(item.acreTile/16)
+	};
+}
+Snowpeople.prototype.getItemAt=function(x, y){
+	x=parseInt(x)-16;
+	y=parseInt(y)-16;
+	if(x<0 || y<0 || x>=map.gridMaxWidth || y>=map.gridMaxHeight)
+		return false;
+	return map.gridXY[x][y];
+}
+Snowpeople.prototype.setMapItem=function(item, itemId){
+	item.set(0x00, 0x00, itemId);
+	item.acre.itemList.edited=true;
+	item.acre.repaintTile(item.acreTile);
+}
+Snowpeople.prototype.getActiveCount=function(){
+	var count=0;
+	for(var i=0; i<this.slots.length; i++)
+		if(this.slots[i].isActive())
+			count++;
+	return count;
+}
+Snowpeople.prototype.isFull=function(){
+	return this.getActiveCount()>=SnowpeopleConstants.SLOT_COUNT;
+}
+Snowpeople.prototype.needsSynchronization=function(){
+	var activeCount=0;
+	var foundEmptySlot=false;
+	for(var i=0; i<this.slots.length; i++){
+		var slot=this.slots[i];
+		if(slot.isActive()){
+			activeCount++;
+			if(foundEmptySlot)
+				return true;
+
+			var item=this.getItemAt(slot.x, slot.y);
+			if(!item || !isSnowpersonMapItemId(item.id) || item.flag1!==0 || item.flag2!==0 || item.id!==getSnowpersonMapItemId(i))
+				return true;
+		}else{
+			foundEmptySlot=true;
+		}
+	}
+	return activeCount!==this.findMapItems().length;
+}
+Snowpeople.prototype.getSlotAt=function(x, y){
+	for(var i=0; i<this.slots.length; i++)
+		if(this.slots[i].isActive() && this.slots[i].x===x && this.slots[i].y===y)
+			return this.slots[i];
+	return false;
+}
+Snowpeople.prototype.getAvailableSlot=function(){
+	for(var i=0; i<this.slots.length; i++){
+		if(!this.slots[i].isActive())
+			return this.slots[i];
+	}
+	return false;
+}
+Snowpeople.prototype.place=function(typeId, x, y){
+	x=parseInt(x);
+	y=parseInt(y);
+	if(isNaN(x) || isNaN(y))
+		return false;
+
+	var item=this.getItemAt(x, y);
+	if(!item){
+		UI.Snackbars.show('Snowpeople need valid town-map coordinates.', 'danger');
+		return false;
+	}
+	var isBuildingTile=(item.hasBuilding || item.hasBuildingMask) && !item.hasSnowperson;
+	if(!isBuildingTile && item.id!==SnowpeopleConstants.EMPTY_ITEM_ID && !isSnowpersonMapItemId(item.id)){
+		UI.Snackbars.show('Snowpeople must be placed on an empty tile.', 'danger');
+		return false;
+	}
+
+	var slot=item.hasSnowperson || this.getSlotAt(x, y) || this.getAvailableSlot();
+	if(!slot){
+		UI.Snackbars.show('Only four snowpeople are supported. They only work in winter saves.', 'danger');
+		return false;
+	}
+
+	slot._refreshTile(false);
+	slot.x=x;
+	slot.y=y;
+	slot.setType(typeId);
+	this.setMapItem(item, getSnowpersonMapItemId(slot.n));
+	slot._refreshTile(true);
+	this.changed=true;
+	refreshTemporaryEventItemOptions();
+	return true;
+}
+Snowpeople.prototype.clearSlot=function(slot){
+	if(!slot || !slot.isActive())
+		return false;
+
+	var item=this.getItemAt(slot.x, slot.y);
+	slot._refreshTile(false);
+	slot.setType('none');
+	if(item && isSnowpersonMapItemId(item.id))
+		this.setMapItem(item, SnowpeopleConstants.EMPTY_ITEM_ID);
+	this.changed=true;
+	refreshTemporaryEventItemOptions();
+	return true;
+}
+Snowpeople.prototype.clearItem=function(item){
+	if(item && item.hasSnowperson)
+		return this.clearSlot(item.hasSnowperson);
+	return false;
+}
+Snowpeople.prototype.validatePlacement=function(slot, label, x, y, usedCoordinates){
+	var key=x+'x'+y;
+	if(usedCoordinates[key]){
+		UI.Snackbars.show('Snowpeople cannot share the same tile.', 'danger');
+		return false;
+	}
+	usedCoordinates[key]=true;
+
+	var item=this.getItemAt(x, y);
+	if(!item){
+		UI.Snackbars.show(label+' has invalid coordinates.', 'danger');
+		return false;
+	}
+	var isBuildingTile=item.hasBuilding || item.hasBuildingMask;
+	if(!isBuildingTile && item.id!==SnowpeopleConstants.EMPTY_ITEM_ID && !isSnowpersonMapItemId(item.id)){
+		UI.Snackbars.show(label+' must be placed on an empty tile.', 'danger');
+		return false;
+	}
+	return true;
+}
+Snowpeople.prototype.validate=function(){
+	if(!this.changed)
+		return true;
+
+	var usedCoordinates={};
+	var activeCount=0;
+
+	for(var i=0; i<this.slots.length; i++){
+		var slot=this.slots[i];
+		if(!slot.isActive())
+			continue;
+
+		activeCount++;
+
+		if(!this.validatePlacement(slot, slot.getName(), slot.x, slot.y, usedCoordinates))
+			return false;
+	}
+
+	if(activeCount>SnowpeopleConstants.SLOT_COUNT){
+		UI.Snackbars.show('Only four solid snowpeople are supported.', 'danger');
+		return false;
+	}
+
+	return true;
+}
+Snowpeople.prototype.save=function(){
+	if(!this.changed && !this.needsSynchronization())
+		return false;
+
+	var activeSlots=[];
+	for(var i=0; i<this.slots.length; i++){
+		var slot=this.slots[i];
+		if(slot.isActive()){
+			slot._refreshTile(false);
+			activeSlots.push({
+				type:slot.type,
+				record:slot.record.slice(),
+				x:slot.x,
+				y:slot.y
+			});
+		}
+	}
+
+	var mapItems=this.findMapItems();
+	for(var i=0; i<mapItems.length; i++)
+		this.setMapItem(mapItems[i], SnowpeopleConstants.EMPTY_ITEM_ID);
+
+	for(var i=0; i<this.slots.length; i++){
+		var slot=this.slots[i];
+		var activeSlot=activeSlots[i];
+
+		if(activeSlot){
+			slot.type=activeSlot.type;
+			slot.record=activeSlot.record.slice();
+			slot.x=activeSlot.x;
+			slot.y=activeSlot.y;
+			this.writeRecord(i, slot.record);
+			var item=this.getItemAt(slot.x, slot.y);
+			if(item)
+				this.setMapItem(item, getSnowpersonMapItemId(i));
+			slot._refreshTile(true);
+		}else{
+			slot.type='none';
+			slot.record=SnowpeopleConstants.EMPTY_RECORD.slice();
+			slot.x=16;
+			slot.y=16;
+			this.writeRecord(i, slot.record);
+		}
+	}
+}
+function SnowpersonSlot(snowpeople, n, mapItem){
+	this.snowpeople=snowpeople;
+	this.n=n;
+	this.record=snowpeople.readRecord(n);
+	this.type=snowpeople.identifyRecord(this.record, n);
+
+	if(mapItem){
+		var coordinates=snowpeople.getItemCoordinates(mapItem);
+		this.x=coordinates.x;
+		this.y=coordinates.y;
+	}else{
+		this.x=16;
+		this.y=16;
+	}
+
+	if(this.isActive())
+		this._refreshTile(true);
+}
+SnowpersonSlot.prototype.isActive=function(){
+	return this.type!=='none';
+}
+SnowpersonSlot.prototype.getName=function(){
+	var snowpersonType=getSnowpersonType(this.type);
+	if(snowpersonType)
+		return snowpersonType.name;
+	if(this.type==='custom')
+		return 'Custom snowperson';
+	return 'Snowperson';
+}
+SnowpersonSlot.prototype._refreshTile=function(status){
+	if(!this.isActive())
+		return;
+
+	var item=this.snowpeople.getItemAt(this.x, this.y);
+	if(!item)
+		return;
+
+	if(status){
+		item.hasSnowperson=this;
+	}else if(item.hasSnowperson===this){
+		item.hasSnowperson=false;
+	}
+	item.refreshName();
+	item.acre.repaintTile(item.acreTile);
+}
+SnowpersonSlot.prototype.setType=function(type){
+	var oldType=this.type;
+	var oldRecord=getSnowpersonRecordHex(this.record);
+	var wasActive=this.isActive();
+	if(wasActive)
+		this._refreshTile(false);
+
+	if(type==='none'){
+		this.record=SnowpeopleConstants.EMPTY_RECORD.slice();
+		this.type='none';
+	}else if(getSnowpersonType(type)){
+		this.record=this.snowpeople.createRecord(type, this.n);
+		this.type=type;
+	}else if(type==='custom'){
+		this.type='custom';
+	}
+
+	if(this.isActive())
+		this._refreshTile(true);
+
+	if(this.type!==oldType || getSnowpersonRecordHex(this.record)!==oldRecord)
+		this.snowpeople.changed=true;
+}
+SnowpersonSlot.prototype.setX=function(x){
+	var oldX=this.x;
+	if(this.isActive())
+		this._refreshTile(false);
+	x=parseInt(x);
+	if(x<16)
+		x=16;
+	else if(x>95)
+		x=95;
+	this.x=x;
+	if(this.isActive())
+		this._refreshTile(true);
+	if(this.x!==oldX)
+		this.snowpeople.changed=true;
+}
+SnowpersonSlot.prototype.setY=function(y){
+	var oldY=this.y;
+	if(this.isActive())
+		this._refreshTile(false);
+	y=parseInt(y);
+	if(y<16)
+		y=16;
+	else if(y>79)
+		y=79;
+	this.y=y;
+	if(this.isActive())
+		this._refreshTile(true);
+	if(this.y!==oldY)
+		this.snowpeople.changed=true;
+}
 
 
 
@@ -3024,6 +3563,15 @@ function addTurnipEvents(dow, AMinput, PMinput){
 
 var currentItemGroup=null;
 function buildFlagEditor(f1,f2){
+	if(isSnowpersonItemValue(el('items').value)){
+		currentItemGroup=el('item_'+el('items').value).parentElement;
+		el('flag-known').innerHTML='<small class="temporary-event-help">Winter saves only. Max 4 snowpeople.</small>';
+		el('flag-unknown').innerHTML='';
+		el('flags-value').innerHTML='0000';
+		el('flags-label').innerHTML='';
+		return;
+	}
+
 	var nextItemGroup=el('item_'+el('items').value).parentElement;
 	if(currentItemGroup!=nextItemGroup){
 		el('flag-known').innerHTML='';
@@ -3203,6 +3751,8 @@ Item.prototype.refreshName=function(){
 	}
 
 	this.name=(el('item_'+this.id))? el('item_'+this.id).innerHTML : '?';
+	if(this.hasSnowperson)
+		this.name=this.hasSnowperson.getName()+' (snowperson)';
 
 	if(!this.inside){
 		if(this.isBuried())
@@ -3211,8 +3761,10 @@ Item.prototype.refreshName=function(){
 			this.name+=' (watered)';
 	}
 
-	if(this.hasBuilding)
-		this.name+='<br/><b style="color:yellow">Building: '+buildingHash[this.hasBuilding.id].name+'</b>';
+	if(this.hasBuilding){
+		var buildingName=this.hasBuilding.getName? this.hasBuilding.getName() : (buildingHash[this.hasBuilding.id]? buildingHash[this.hasBuilding.id].name : '(?)');
+		this.name+='<br/><b style="color:yellow">Building: '+buildingName+'</b>';
+	}
 }
 
 
@@ -3553,6 +4105,7 @@ function initializeEverything2(){
 			itemCounter++;
 		}
 	}
+	addTemporaryEventItemOptions();
 	el('items').value=0x7ffe;
 
 	selectBuildings=document.createElement('select');
@@ -3721,6 +4274,8 @@ function initializeEverything2(){
 			const option=document.createElement('option');
 			option.innerHTML=item.innerHTML;
 			option.value=item.value;
+			option.className=item.className;
+			option.title=item.title;
 			el('items-search').appendChild(option);
 		});
 
@@ -3965,6 +4520,9 @@ function initializeEverything2(){
 		}
 	}
 
+	if(plusMode)
+		town.snowpeople=new Snowpeople();
+
 	for(var i=0; i<2; i++)
 		buildings.push(new Building('island', i));
 
@@ -4162,28 +4720,82 @@ function selectPlayer(p){
 
 
 
-function saveChanges(){
-	for(var i=0; i<4; i++)
-		players[i].save();
+function canUseLocalSaveHelper(){
+	return location.protocol==='file:' || location.hostname==='localhost' || location.hostname==='127.0.0.1';
+}
+async function saveWithLocalSaveHelper(){
+	if(!canUseLocalSaveHelper() || !window.fetch || !savegame.getBlob)
+		return false;
 
-	for(var i=0; i<buildings.length; i++)
-		buildings[i].save();
+	var controller=window.AbortController? new AbortController() : false;
+	var timeout=controller? setTimeout(function(){controller.abort()}, 700) : false;
+	try{
+		var response=await fetch('http://127.0.0.1:38765/save', {
+			method:'POST',
+			headers:{
+				'Content-Type':'application/octet-stream',
+				'X-ACNL-Filename':savegame.fileName
+			},
+			body:savegame.getBlob(),
+			signal:controller? controller.signal : undefined
+		});
+		if(timeout)
+			clearTimeout(timeout);
+		if(!response.ok)
+			return false;
 
-	for(var i=0; i<villagers.length; i++)
-		villagers[i].save();
-
-	map.save();
-	island.save();
-	grassMap.save();
-	//grassMapToday.save();
-	
-	town.save();
-
-
-	/* recalculate checksums */
-	updateChecksums(savegame);
+		UI.Snackbars.show('Saved changes directly to the Citra save folder.');
+		return true;
+	}catch(e){
+		if(timeout)
+			clearTimeout(timeout);
+		return false;
+	}
+}
+async function saveSavegameFile(){
+	if(await saveWithLocalSaveHelper())
+		return true;
 
 	savegame.save();
+	return true;
+}
+async function saveChanges(){
+	if(town.snowpeople && !town.snowpeople.validate())
+		return false;
 
-	WarnOnLeave.set(false);
+	var saveButton=el('save-button');
+	saveButton.disabled=true;
+	try{
+		for(var i=0; i<4; i++)
+			players[i].save();
+
+		for(var i=0; i<buildings.length; i++)
+			buildings[i].save();
+
+		for(var i=0; i<villagers.length; i++)
+			villagers[i].save();
+
+		if(town.snowpeople)
+			town.snowpeople.save();
+
+		map.save();
+		island.save();
+		grassMap.save();
+		//grassMapToday.save();
+
+		town.save();
+
+
+		/* recalculate checksums */
+		updateChecksums(savegame);
+
+		await saveSavegameFile();
+
+		WarnOnLeave.set(false);
+	}catch(e){
+		UI.Snackbars.show('Could not save changes.', 'danger');
+		throw e;
+	}finally{
+		saveButton.disabled=false;
+	}
 }

@@ -53,6 +53,9 @@ function MarcFile(source, onLoad){
 	}
 }
 MarcFile.prototype.save=function(){
+	saveAs(this.getBlob(), this.fileName)
+}
+MarcFile.prototype.getBlob=function(){
 	var blob;
 	try{
 		blob=new Blob([this._u8array], {type: this.fileType});
@@ -69,9 +72,8 @@ MarcFile.prototype.save=function(){
 			alert('Incompatible browser.');
 		}
 	}
-	saveAs(blob, this.fileName)
+	return blob
 }
-
 MarcFile.prototype.readU8=function(offset){
 	return this._u8array[offset]
 }

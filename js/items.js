@@ -5502,39 +5502,8 @@ null,true, /*pic of Filly?*/
 "wrapping paper",
 ]},
 
-/* snowman, snowboy, snowmam, snowtyke */
-/*{title:"Snow people",oldId:0x7fe0,items:[
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-[null],
-["snowmam"],
-["snowboy"],
-[null],
-[null],
-[null],
-[null]
-]},*/
+/* Snowpeople are added dynamically as temporary/event objects.
+   They need hidden snowperson state slots, not only raw map item IDs. */
 
 
 
@@ -5547,4 +5516,3 @@ null,true,
 ]}
 
 ];
-

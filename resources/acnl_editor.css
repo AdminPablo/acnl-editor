@@ -719,6 +719,10 @@ span.sprite{display:inline-block;vertical-align:middle}
 .building-list li.building-row:hover{background-color:#eee}
 .building-list li.building-row .div-coord{float:right}
 .building-list li.building-row input[type="text"]{font-family:var(--font-monospace); width:32px}
+.temporary-event-note,
+.temporary-event-option.temporary-event-maxed{color:#888}
+.temporary-event-selected.temporary-event-maxed{color:#777}
+.temporary-event-help{color:#777;display:block;margin-bottom:4px}
 
 .edit-icon{margin-left:5px;opacity:.1;transition:opacity .2s}
 span.editable:hover>.edit-icon,tr:hover .edit-icon,div:hover>.edit-icon{opacity:1}
